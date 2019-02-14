@@ -10,3 +10,7 @@ Since the notebook displays every line of ouput from the Twitter API query, ther
 Clone the repository and open the file in Jupyter Notebook
 
 `$ git clone https://github.com/JannisMueller/wrangle-and-analyze-data.git`
+
+# License 
+
+[MIT License](https://opensource.org/licenses/MIT)
