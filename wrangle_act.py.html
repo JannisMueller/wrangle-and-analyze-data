@@ -1,0 +1,1148 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# ## Gather
+
+# In[466]:
+
+
+import pandas as pd
+from pandas import DataFrame
+import requests
+import io
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+get_ipython().run_line_magic('matplotlib', 'inline')
+
+
+# In[467]:
+
+
+#importing the WeRateDogs Twitter archive (CSV file)
+twitter_archive = pd.read_csv('twitter-archive-enhanced.csv')
+
+
+# In[468]:
+
+
+#double check if the operation was succesfull
+twitter_archive.head()
+
+
+# In[469]:
+
+
+#downloading programmatically (with request libary) the tweet image predictions
+url = 'https://d17h27t6h515a5.cloudfront.net/topher/2017/August/599fd2ad_image-predictions/image-predictions.tsv'
+response = requests.get(url).content
+tweet_images= pd.read_csv(io.StringIO(response.decode('utf-8')), delimiter='\t')
+
+
+# In[470]:
+
+
+#double check if the operation was succesfull
+tweet_images.head()
+
+
+# In[471]:
+
+
+import tweepy
+from tweepy import OAuthHandler
+import json
+from timeit import default_timer as timer
+
+# Query Twitter API for each tweet in the Twitter archive and save JSON in a text file
+# These are hidden to comply with Twitter's API terms and conditions
+consumer_key = 'HIDDEN'
+consumer_secret = 'HIDDEN'
+access_token = 'HIDDEN'
+access_secret = 'HIDDEN'
+
+auth = OAuthHandler(consumer_key, consumer_secret)
+auth.set_access_token(access_token, access_secret)
+
+api = tweepy.API(auth, wait_on_rate_limit=True)
+
+# NOTE TO STUDENT WITH MOBILE VERIFICATION ISSUES:
+# df_1 is a DataFrame with the twitter_archive_enhanced.csv file. You may have to
+# change line 17 to match the name of your DataFrame with twitter_archive_enhanced.csv
+# NOTE TO REVIEWER: this student had mobile verification issues so the following
+# Twitter API code was sent to this student from a Udacity instructor
+# Tweet IDs for which to gather additional data via Twitter's API
+tweet_ids = twitter_archive.tweet_id.values
+len(tweet_ids)
+
+# Query Twitter's API for JSON data for each tweet ID in the Twitter archive
+count = 0
+fails_dict = {}
+start = timer()
+# Save each tweet's returned JSON as a new line in a .txt file
+with open('tweet_json.txt', 'w') as outfile:
+    # This loop will likely take 20-30 minutes to run because of Twitter's rate limit
+    for tweet_id in tweet_ids:
+        count += 1
+        print(str(count) + ": " + str(tweet_id))
+        try:
+            tweet = api.get_status(tweet_id, tweet_mode='extended')
+            print("Success")
+            json.dump(tweet._json, outfile)
+            outfile.write('\n')
+        except tweepy.TweepError as e:
+            print("Fail")
+            fails_dict[tweet_id] = e
+            pass
+end = timer()
+print(end - start)
+print(fails_dict)
+
+
+# Now I will read the tweet_json.txt file line by line into a pandas DataFrame
+# with tweet ID, retweet count, and favorite count as outcome
+#  
+#  source: https://discuss.analyticsvidhya.com/t/reading-a-text-file-in-python/18515
+#  https://stackoverflow.com/questions/3277503/how-to-read-a-file-line-by-line-into-a-list
+
+# In[474]:
+
+
+#reading tweet_json.txt file line by line into a pandas DataFrame
+#with tweet ID, retweet count, and favorite count
+# I noticed in the cleaning part that I also need to add addtional columns in order 
+# to access all data. We have in total 67 rows where the favorite_count and retweet_count is
+# in column retweeted and favorited
+tweet_list = []
+with open('tweet-json.txt') as f:
+    for line in f:
+        content = f.readline()
+        tweet_id = [line.strip() for line in line.split(',')][1]
+        favorite_count = [line.strip() for line in line.split(',')][-6]
+        retweet_count = [line.strip() for line in line.split(',')][-7]
+        retweeted = [line.strip() for line in line.split(',')][-4]
+        favorited = [line.strip() for line in line.split(',')][-5]
+        lang = [line.strip() for line in line.split(',')][-1]
+        tweet_list.append({'tweet_id': tweet_id,
+                        'favorite_count': favorite_count,
+                        'retweet_count'  : retweet_count,
+                        'retweeted': retweeted,
+                        'favorited' : favorited, 
+                       
+                          })
+tweet_measurements = pd.DataFrame(tweet_list, columns = ['tweet_id', 'favorite_count', 'retweet_count', 'retweeted','favorited'])
+
+
+# In[475]:
+
+
+#double check if the operation was succesfull
+tweet_measurements.head()
+
+
+# ## ASSES
+
+# #### In the first step I will do a visual assesment of the three tables: `twitter_archive`, `tweet_images` & `tweet_measurements` and collect my findings
+
+# In[476]:
+
+
+twitter_archive
+
+
+# In[477]:
+
+
+tweet_images
+
+
+# In[478]:
+
+
+tweet_measurements
+
+
+# #### In the next step I will futher investigate the tables programmatically
+
+# In[479]:
+
+
+twitter_archive.info()
+
+
+# In[480]:
+
+
+#since we just would like to have tweets till first of August, 
+# I need to check this
+(twitter_archive.timestamp.min(), twitter_archive.timestamp.max())
+
+
+# In[481]:
+
+
+tweet_images.info()
+
+
+# In[482]:
+
+
+tweet_measurements.info()
+
+
+# In[483]:
+
+
+# I will check how many of the tweets are retweets in table tweet_measurements
+tweet_measurements[tweet_measurements['retweeted'] == True]
+
+
+# In[484]:
+
+
+# I will check the tweets which are retweets in table twitter_archive
+twitter_archive.in_reply_to_status_id.min()
+
+
+# In[485]:
+
+
+twitter_archive[twitter_archive['in_reply_to_status_id'] == 6.658146967007232e+17]
+
+
+# #### Replies to other tweets might include ratings, so I will not exclude them
+
+# In[486]:
+
+
+# in the next step I will check if there column duplicates (other than tweet_id) in the tables 
+all_columns = pd.Series(list(twitter_archive) + list(tweet_images) + list(tweet_measurements))
+all_columns[all_columns.duplicated()]
+
+
+# =There no column duplicates within the three tables
+
+# #### Now I will further investigate the values that are stored in the columns of all there tables to identify faulty values
+
+# In[487]:
+
+
+twitter_archive.describe()
+
+
+# In[488]:
+
+
+twitter_archive.rating_numerator.value_counts()
+
+
+# In[489]:
+
+
+# In the next step I will have closer look at the faulty values
+twitter_archive[twitter_archive['rating_numerator'] == 0].text
+
+
+# #### The null values are part of the unique rating system of WeRateDogs
+
+# In[490]:
+
+
+#In the next step I will have a closer look at the
+# tweets to see if the high values are correct
+pd.options.display.max_colwidth = 200
+twitter_archive[twitter_archive['rating_numerator'] ==666].text
+
+
+# In[491]:
+
+
+twitter_archive[twitter_archive['rating_numerator'] ==204].text
+
+
+# #### The high values are part of the unique rating system of WeRateDogs
+
+# In[492]:
+
+
+twitter_archive.rating_denominator.value_counts()
+
+
+# In[493]:
+
+
+twitter_archive[twitter_archive['rating_denominator']== 0].text
+
+
+# In[494]:
+
+
+twitter_archive.name.value_counts()
+
+
+# In[495]:
+
+
+#In the next step I will have a closer look at the
+# tweets to see if the values are correct
+twitter_archive[twitter_archive['name']== 'a'].text
+
+
+# In[496]:
+
+
+tweet_images.describe()
+
+
+# In[497]:
+
+
+tweet_measurements.describe()
+
+
+# In[498]:
+
+
+tweet_measurements.favorite_count.value_counts()
+
+
+# In[499]:
+
+
+tweet_measurements.retweet_count.value_counts()
+
+
+# In[500]:
+
+
+tweet_images.p1.value_counts()
+
+
+# Now I also check for duplicates in the 3 tables
+
+# In[501]:
+
+
+twitter_archive[twitter_archive.duplicated()]
+
+
+# In[502]:
+
+
+tweet_images[tweet_images.duplicated()]
+
+
+# In[503]:
+
+
+tweet_measurements[tweet_measurements.duplicated()]
+
+
+# #### =The tables have no duplicates
+
+# #### Quality
+# 
+# ##### `General issues:`
+# all 3 tables have a different amount of entries/ rows
+# 
+# ##### `twitter_archive ` table
+# - missing values in columns "in_reply_to_status_id", "retweeted_status_id", "retweeted_status_timestamp"	
+# - missing values in name column and wrong values in name columns:
+#   - None         (680x)
+#   - a            (55x)
+#   - an           (6x)
+# - Erroneous datatype (doggo, floofer, pupper, puppo, timestamp, tweet_id, in_reply_to_status_id, in_reply_to_user_id )
+# - wrong value in the rating_denominator column (0 in row 313)
+# - 181 tweets are retweets
+# 
+# ##### `tweet_images` table
+# - wrong value in the p1 values: "shopping_cart", "convertible"
+# - undescriptive column names in this table
+# - different formats of the breed-values for the dogs
+# - Erroneous datatype (tweet_id (str instead),  p1, p2, p3 (category instead)
+# 
+# ##### `tweet_measurements` table
+# - The column name in the beginning of all values in all columns of this table
+# - wrong values in the favorite_count and retweet_count column. "is_quote_status": false"(67 entries total) and "contributors": null" (25 entries total), "lang": "en"}(41 entries total) instead of favorite count and retweet count in for ex. row 27, 1148, 1168. In total 67 entries.
+# - Erroneous datatype (retweeted, favorited)
+
+# #### Tidiness
+# - tweet_measurements result of image Predictions should be part of the twitter_archive table
+# - rating_numerator & rating_denominator should be one column in (each info in one column)
+# - dog stages floofer, pupper, puppo, doggo are spread in 4 columns. they should be merged into one.
+
+# I will now chose 8 of Quality and 2 Tidiness issues in order to clean them in the next step.
+# My choice will base on the upcoming Investigation and will base on severity of the issue. My goal is to have data that helps me to investigate if the popularity of tweet (favorites & retweets) are related to the rating or the breed and if there is are breeds that gets rated better than other breeds (does WeRateDogs has a favorite breed)?
+
+# In the first step I will create copies of the tables twitter_archive, tweet_images, tweet_measurements
+
+# ### Clean
+
+# In the first step I will create copies of the tables twitter_archive, tweet_images, tweet_measurements
+
+# In[504]:
+
+
+twitter_archive_clean = twitter_archive.copy()
+tweet_images_clean = tweet_images.copy()
+tweet_measurements_clean = tweet_measurements.copy()
+
+
+# In[505]:
+
+
+# double check if the operation was succesful
+twitter_archive_clean.head(2)
+
+
+# In[506]:
+
+
+# double check if the operation was succesful
+tweet_images_clean.head(2)
+
+
+# In[507]:
+
+
+# double check if the operation was succesful
+tweet_measurements_clean.head(2)
+
+
+# ##### 1.  `tweet_measurements` table: The column name in the beginning of all values in all columns of this table
+
+# #### Define
+
+# cutting off the text in the beginng of every row of the all columns in table tweet_measurements: tweet_id, favorite_count, retweet_count, retweeted and favorited
+
+# #### Code
+
+# In[508]:
+
+
+tweet_measurements_clean.tweet_id = tweet_measurements_clean.tweet_id.str.replace('"id":','').str.strip()
+tweet_measurements_clean.favorite_count = tweet_measurements_clean.favorite_count.str.replace('"favorite_count":','').str.strip()
+tweet_measurements_clean.retweet_count = tweet_measurements_clean.retweet_count.str.replace('"retweet_count":','').str.strip()
+tweet_measurements_clean.retweeted = tweet_measurements_clean.retweeted.str.replace('"retweeted":','').str.strip()
+tweet_measurements_clean.favorited = tweet_measurements_clean.favorited.str.replace('"favorited":','').str.strip()
+
+
+# ### Test
+
+# In[509]:
+
+
+# double check if the operation was succesful
+tweet_measurements_clean.head()
+
+
+# ##### 2. `tweet_measurements` table:  wrong values in the favorite_count and retweet_count column
+
+# #### Define
+
+# identifying the wrong values and filling the missing values with the information from the txt file
+
+# #### Iteration:
+# This showed me that I need to get more columns from the txt file in order to get the missing information; so I will go back to the Gather part to add the columns retweeted andfavorited to the dataframe twitter_measurements
+
+# #### Code
+
+# In[510]:
+
+
+# identifying the wrong values and storing them in a new data frame called wrong_values
+wrong_values = tweet_measurements_clean[tweet_measurements_clean['favorite_count'] == '"is_quote_status": false']
+
+
+# In[511]:
+
+
+wrong_values.head()
+
+
+# In[512]:
+
+
+# dropping the columns favorite_count and retweet_count
+wrong_values = wrong_values.drop(['favorite_count', 'retweet_count'], axis=1)
+# renaming the columns retweeted and favorited to favorite_count and retweet_count
+wrong_values = wrong_values.rename(columns={"retweeted" : "favorite_count", "favorited": "retweet_count"})
+
+
+# In[513]:
+
+
+wrong_values = wrong_values.rename(columns={"retweeted" : "retweet_count", "favorited": "favorite_count"})
+
+
+# In[514]:
+
+
+# cutting off the text in the beginng of every row
+wrong_values.favorite_count = wrong_values.favorite_count.str.replace('"favorite_count":','').str.strip()
+wrong_values.retweet_count = wrong_values.retweet_count.str.replace('"retweet_count":','').str.strip()
+
+
+# In[515]:
+
+
+# double checking the operation
+wrong_values.head()
+
+
+# In[516]:
+
+
+# dropping the rows with the wrong values from tweet_measurements
+tweet_measurements_clean = tweet_measurements_clean[tweet_measurements_clean.favorite_count !='"is_quote_status": false']
+#double checking if all rows with wrong values are gone 
+tweet_measurements_clean[tweet_measurements_clean['favorite_count'] == '"is_quote_status": false']
+ 
+
+
+# In[517]:
+
+
+# appending the fixed values (wrong_value table) to the df
+tweet_measurements_clean= tweet_measurements_clean.append(wrong_values)
+#dropping the rows I just need for the cleaning process
+tweet_measurements_clean= tweet_measurements_clean.drop(['favorited','retweeted'], axis=1)
+
+
+# ### Test
+
+# In[518]:
+
+
+# checking if the operations were succesful
+tweet_measurements_clean.head()
+
+
+# In[519]:
+
+
+tweet_measurements_clean.info()
+
+
+# In[520]:
+
+
+tweet_measurements_clean.favorite_count = tweet_measurements_clean.favorite_count.astype(int)
+tweet_measurements_clean.retweet_count  = tweet_measurements_clean.retweet_count .astype(int)
+
+
+# In[521]:
+
+
+tweet_measurements_clean.info()
+
+
+# ##### 3. `twitter_archive ` table: 181 tweets are retweets (we just want to have original tweets)
+
+# ### Define
+
+# Deleting/excluding the rows/tweets that are retweets from twitter_archive and then deleting the columns concerning the retweets from the table twitter_archive
+
+# ### Code
+
+# In[522]:
+
+
+# deleting/excluding the rows/tweets that are retweets from twitter_archive
+twitter_archive_clean = twitter_archive_clean[twitter_archive_clean.retweeted_status_id.isnull()]
+#deleting the columns concerning the retweets from the table twitter_archive
+twitter_archive_clean = twitter_archive_clean.drop(['retweeted_status_id', 'retweeted_status_user_id','retweeted_status_timestamp'], axis=1)
+
+
+# ### Test
+
+# In[523]:
+
+
+# double checking the operations
+twitter_archive_clean.info()
+
+
+# 4. ##### `twitter_archive ` table:  Erroneous datatype (doggo, floofer, pupper, puppo, timestamp, tweet_id, in_reply_to_status_id, in_reply_to_user_id )
+
+# ### Define
+
+# Convert doggo, floofer, pupper, puppo will category data type. Convert timestamp  to datetime and tweet_id, n_reply_to_status_id and in_reply_to_user_id to string data type.
+
+# In[524]:
+
+
+# to category
+twitter_archive_clean.doggo = twitter_archive_clean.doggo.astype('category')
+twitter_archive_clean.floofer = twitter_archive_clean.floofer.astype('category')
+twitter_archive_clean.pupper = twitter_archive_clean.pupper.astype('category')
+twitter_archive_clean.puppo = twitter_archive_clean.puppo.astype('category')
+
+# to datetime
+twitter_archive_clean.timestamp = pd.to_datetime(twitter_archive_clean.timestamp)
+
+#to string
+twitter_archive_clean.tweet_id = twitter_archive_clean.tweet_id.astype(str)
+twitter_archive_clean.in_reply_to_status_id = twitter_archive_clean.in_reply_to_status_id.astype(str)
+twitter_archive_clean.in_reply_to_user_id = twitter_archive_clean.in_reply_to_user_id.astype(str
+                                                                                            ) 
+
+
+# In[525]:
+
+
+twitter_archive_clean.info()
+
+
+# 5. ##### `tweet_images ` table: Erroneous datatype (tweet_id (str instead), p1, p2, p3 (category instead)
+
+# ### Define
+
+# Convert p1, p2, p3 to category data type. Convert tweet_id to string data type
+
+# ### Code
+
+# In[526]:
+
+
+# category
+tweet_images.p1 = tweet_images.p1.astype('category')
+tweet_images.p2 = tweet_images.p2.astype('category')
+tweet_images.p3 = tweet_images.p3.astype('category')
+
+# to string
+tweet_images.teet_id = tweet_images.p3.astype(str)
+
+
+# In[527]:
+
+
+tweet_images.info()
+
+
+# ##### 6.  `twitter_archive ` table:  wrong value in the rating_denominator column (0 in row 313)
+
+# ### Define
+
+# Changing the null value in the denominator column (row 13) to 13 (as it is correct)
+
+# ### Code
+
+# In[528]:
+
+
+# Changing the all values in the denominator column to 10.
+twitter_archive_clean.rating_denominator = twitter_archive_clean.rating_denominator.replace(0,10)
+
+
+# ### Test
+
+# In[529]:
+
+
+# checking if the operation was succesful
+twitter_archive_clean[twitter_archive_clean['rating_denominator'] == 0]
+
+
+# ##### 7.  `tweet_images` table: - undescriptive column names in this table
+
+# ### Define
+
+# Change the following columns:
+# - img_num = number_images
+# - p1 = prediction_1
+# - p2 = prediction_2
+# - p3 = prediction_3
+# - p1_conf = confidence_prediction_1
+# - p2_conf = confidence_prediction_2
+# - p3_conf = confidence_prediction_3
+# - p1_dog = breed_prediction_1
+# - p2_dog = breed_prediction_2
+# - p3_dog = breed_prediction_3
+
+# ### Code
+
+# In[530]:
+
+
+tweet_images_clean = tweet_images_clean.rename(columns={
+                                                'p1': 'prediction_1',
+                                                'p2': 'prediction_2',
+                                                'p3': 'prediction_3',
+                                                'p1_conf': 'confidence_prediction_1',
+                                                'p2_conf': 'confidence_prediction_2',
+                                                'p3_conf': 'confidence_prediction_3',
+                                                'p1_dog': 'breed_predicted_1',
+                                                'p2_dog': 'breed_predicted_2',
+                                                'p3_dog': 'breed_predicted_3'})
+
+
+# ### Test
+
+# In[531]:
+
+
+tweet_images_clean.info()
+
+
+# ##### 8.  `tweet_images` table:  different formats of the breed-values for the dogs
+
+# ### Define
+
+# changes all breed names to lower case and take away the _ in all breed names in 
+# prediction_1, prediction_2 and prediction_3
+
+# ### Code
+
+# In[532]:
+
+
+#changes all breed names to lower case and take away the _ in all breed names
+tweet_images_clean['prediction_1'] = tweet_images_clean['prediction_1'].str.lower().str.replace('_', ' ')
+tweet_images_clean['prediction_2'] = tweet_images_clean['prediction_2'].str.lower().str.replace('_', ' ')
+tweet_images_clean['prediction_3'] = tweet_images_clean['prediction_3'].str.lower().str.replace('_', ' ')
+
+
+# ### Test
+
+# In[533]:
+
+
+tweet_images_clean['prediction_1'].sample(5)
+
+
+# In[534]:
+
+
+tweet_images_clean['prediction_2'].sample(5)
+
+
+# In[535]:
+
+
+tweet_images_clean['prediction_3'].sample(5)
+
+
+#  ## Tidiness
+
+# ### Code
+
+# ##### 1.  result of image Predictions and tweet_measurements should be in twitter_archive table
+
+# ### Define 
+# integrate the column 'prediction_1','breed_predicted_1, etc. in table "twitter_archive_clean by merging the column with the twitter_archive on Tweet_id
+# 
+# Merge the favorite_count and retweet_count column to the twitter_archive_clean table, joining on tweet_id
+
+# ### Code
+# 
+
+# In[536]:
+
+
+# first I need to change the data type of column tweet_id to str (so it matches the data type from table twitter_archive)
+tweet_images_clean.tweet_id = tweet_images_clean.tweet_id.astype(str)
+
+
+# In[537]:
+
+
+#Isolate the tweet_ID and predictions columns in the tweet_images_clean table
+id_breed = tweet_images_clean[['prediction_1','breed_predicted_1','prediction_2','breed_predicted_2', 'prediction_3', 'breed_predicted_3','tweet_id']]
+#merging id_breed with twitter_archive_clean
+twitter_archive_clean = pd.merge(twitter_archive_clean,id_breed,
+                            on=['tweet_id'], how='left')
+# Merge the favorite_count and retweet_count column to the twitter_archive_clean table, joining on tweet_id
+twitter_archive_clean = pd.merge(twitter_archive_clean,tweet_measurements_clean, on=['tweet_id'], how='left')
+
+
+# ### Test
+
+# In[538]:
+
+
+twitter_archive_clean.info()
+
+
+# In[539]:
+
+
+twitter_archive_clean.sample(3)
+
+
+# In[540]:
+
+
+tweet_images_clean[tweet_images_clean['tweet_id'] == '667470559035432960']
+
+
+# In[541]:
+
+
+tweet_images_clean[tweet_images_clean['tweet_id'] == '666337882303524864']
+
+
+# In[542]:
+
+
+tweet_images_clean[tweet_images_clean['tweet_id'] == '671122204919246848']
+
+
+# ##### 2. `twitter_archive`: dog stages floofer, pupper, puppo, doggo are spread in 4 columns. they should be merged into one.
+
+# ### Define 
+# 
+# creating a new dataframe with the dog stages floofer, pupper, puppo, doggo in order to merge the 4 columns with a lambda function into one column named dog_stages.
+# Then merging the dog_stages column with the twitter_archive column and dropping the columns floofer, pupper, puppo, doggo from the table
+# 
+
+# In[543]:
+
+
+#creating a new dataframe with the dog stages
+df_dog_stages = twitter_archive_clean[['tweet_id','doggo','floofer','pupper','puppo']]
+#replacing all None with Nan in order to drop them in the lambda functions
+df_dog_stages = df_dog_stages.replace('None', np.nan)
+
+
+# In[544]:
+
+
+# merge the 4 columns with a lambda function into one column named dog_stages
+df_dog_stages['dog_stages'] = df_dog_stages[df_dog_stages.columns[1:]].apply(
+    lambda x: ', '.join(x.dropna()),
+    axis=1)
+#creplacing all empty columns with NaN
+df_dog_stages = df_dog_stages.replace('', np.nan)
+df_dog_stages = df_dog_stages.drop(['doggo','floofer','pupper', 'puppo'],axis=1)
+
+
+# In[545]:
+
+
+# Merge the dog_stages to the twitter_archive_clean table, joining on tweet_id and droping the old columns
+twitter_archive_clean = pd.merge(twitter_archive_clean,df_dog_stages, on=['tweet_id'], how='left')
+twitter_archive_clean = twitter_archive_clean.drop(['doggo','floofer','pupper', 'puppo'],axis=1)
+
+
+# In[546]:
+
+
+twitter_archive_clean.sample(2)
+
+
+# In[547]:
+
+
+# Storing the clean DataFrame in a CSV file named twitter_archive_master.csv
+twitter_archive_clean.to_csv('twitter_archive_master.csv', index=False)
+
+
+# Please find further information about the wrangle process in the Wrangle Report (
+
+# ### Explore Dataset- Questions
+
+# I would like to know if the success of a tweet in terms of amount of retweets and favorites is related to the rating from WeRateDogs (have higher rated dogs more retweets & get more favorites)
+# 
+# Furthermore, it would be interesting to investigagte if the creator of WeRateDogs rate a some breeds better than others. Can we see from the data if the owners have a favorite breed? 
+# 
+# In contrast, do the user have rate a some breeds retweet and fovourite some breeds more than others. Can we see from the data if the owners have a favorite breed?
+
+# In[548]:
+
+
+# creating a copy of the twitter_archive_clean for the investigation
+tweet_archive = twitter_archive_clean.copy()
+tweet_archive.head(2)
+
+
+# In[549]:
+
+
+tweet_archive.info()
+
+
+# #### Since I wont need all columns for my investigation I will drop the following columns from the data frame:
+#   - in_reply_to_status_id
+#   - in_reply_to_user_id
+#   - timestamp
+#   - source
+#   - expanded_urls
+#   - dog_stages
+#   
+
+# In[550]:
+
+
+# dropping columns from the df
+tweet_archive = tweet_archive.drop(['in_reply_to_status_id', 'in_reply_to_user_id','timestamp', 'source', 'expanded_urls', 'dog_stages'], axis=1)
+
+
+# In[551]:
+
+
+# double checking if the operation was succesful
+tweet_archive.info()
+
+
+# #### Saving the result of the images prediction in a new coloum called breed. By doing so, I make sure that I can investigate the data in the best way. Writing a function that takes the breed of prediction 1 if True, otherwise goes to to the second prediction and checks if the prediction is True (and takes this value if True). If also the second prediction isnt True, go to prediction 3 and takes the value from there (if True)
+
+# In[552]:
+
+
+def get_breed(tweet_archive):
+    if tweet_archive['breed_predicted_1'] == True:
+        return tweet_archive['prediction_1']
+    elif (tweet_archive['breed_predicted_1'] == False) & (tweet_archive['breed_predicted_2'] == True):
+        return tweet_archive['prediction_2'] 
+    elif (tweet_archive['breed_predicted_1'] == False) & (tweet_archive['breed_predicted_2'] == False) & (tweet_archive['breed_predicted_3'] == True):
+        return tweet_archive['prediction_3']
+    else:
+        return 'no breed predicted'
+
+tweet_archive['breed'] = tweet_archive.apply(get_breed, axis = 1)
+# changing the data type of breed to categorical
+tweet_archive.breed = tweet_archive.breed.astype('category')
+
+
+# In[553]:
+
+
+# testing if the operation was successful
+tweet_archive['breed'].value_counts()
+
+
+# In[554]:
+
+
+#dropping prediction_1, breed_predicted_1 prediction_2, breed_predicted_2 prediction_3 breed_predicted_3
+tweet_archive = tweet_archive.drop(['prediction_1','breed_predicted_1','prediction_2','breed_predicted_2','prediction_3','breed_predicted_3'], axis= 1)
+
+
+# In[555]:
+
+
+tweet_archive.sample(2)
+
+
+# #### Another problem that I see is that we have not for every tweet the following values: breed, favorite_count , retweet_count:
+
+# In[556]:
+
+
+tweet_archive.breed[tweet_archive['breed'] != "no breed predicted"].count()
+
+
+# In[557]:
+
+
+tweet_archive.breed = tweet_archive.breed[tweet_archive['breed'] != "no breed predicted"]
+
+
+# In[558]:
+
+
+tweet_archive.favorite_count.isnull().sum()
+
+
+# In[559]:
+
+
+tweet_archive.retweet_count.isnull().sum()
+
+
+# In[560]:
+
+
+# dropping the null values from the data set which I created by just including values >0
+tweet_archiv = tweet_archive.dropna(axis=0, inplace=True)
+
+
+# In[561]:
+
+
+tweet_archive.info()
+
+
+# #### The second problem is to make the rating from WeRateDogs more comparable by dividing the rating_numerator by the rating_denominator since both have so many outliers
+
+# In[562]:
+
+
+# adding a new column called rating_new which divides the numerator by the denominator
+tweet_archive['rating_new'] = tweet_archive.rating_numerator/ tweet_archive.rating_denominator
+
+
+# In[563]:
+
+
+tweet_archive['rating_new'].value_counts()
+
+
+# In[564]:
+
+
+tweet_archive.breed.value_counts()
+
+
+# Even though the ratings have some outliers, I decided to keep the outliers since the rating system is what WeRateDogs so special
+
+# ## Histogramm for various features- for an first overview of the factors
+
+# In[565]:
+
+
+# creating the subplot for the following columns: favorite_count , retweet_count, new_rating
+
+fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(18,30))
+ax0, ax1, ax2= axes.flatten()
+n_bins = 3
+plt.setp(axes.flat, ylabel='Count')
+
+
+ax0.hist(tweet_archive.rating_new,n_bins)
+ax0.set(title = 'Distribution Rating', xlabel='Rating')
+ax0.set_xticks([0,1,2,3,4,5,6,7,8])
+
+ax1.hist(tweet_archive.favorite_count,n_bins)
+ax1.set(title = 'Distributions Favorite Count', xlabel='Favorite Count')
+ax1.set_xticks([0,10000,20000,30000,40000,50000,60000,70000])
+
+ax2.hist(tweet_archive.retweet_count, n_bins)
+ax2.set(title = 'Distributions Retweet Count', xlabel='Retweet Count')
+ax2.set_xticks([0,10000,20000,30000,40000,50000,60000,70000])
+
+
+fig.tight_layout();
+
+
+# The Histograms show that data rating, retweets and favorites is right-skewed.
+# (source: http://asq.org/learn-about-quality/data-collection-analysis-tools/overview/histogram2.html)
+
+# #### Question 1: Do the creator of WeRateDogs rate a some breeds better than others. Can we see from the data if the owners have a favorite breed? 
+
+# In[566]:
+
+
+# in the first step I would to identify the 10 highest rated breeds in average
+top_ten_breeds_creators = tweet_archive.groupby('breed').rating_new.mean().sort_values(ascending=False).head(10)
+top_ten_breeds_creators
+
+
+# In[567]:
+
+
+# plotting the 10 highest rated breeds in average
+ax = top_ten_breeds_creators.plot(kind='bar', fontsize=12,legend=True)
+ax.legend(['Rating'])
+plt.xlabel('Breed', fontsize=15)
+plt.title('Average Rating- Top 10',fontsize=20);
+
+
+# The finding shows that the creators of the Twitter Account WeRateDogs have their favorites when you look at the average rating of the different breeds. Maybe the creators have on of these breeds as pet and are therefore biased?
+
+# ####  Question 2: Do the user have rate a some breeds retweet and fovourite some breeds more than others. Can we see from the data if the owners have a favorite breed?
+
+# In[568]:
+
+
+# identifying the 10 highest retweeted breeds in average
+top_ten_retweeted_breeds = tweet_archive.groupby('breed').retweet_count.mean().sort_values(ascending=False).head(10)
+top_ten_retweeted_breeds
+
+
+# In[569]:
+
+
+# identifying the 10 highest favorite breeds in average
+top_ten_faved_breeds = tweet_archive.groupby('breed').favorite_count.mean().sort_values(ascending=False).head(10)
+top_ten_faved_breeds
+
+
+# #### The findings show that the users and creators dont have exactly the same favorites but there are 2 breeds in the Top 10 rated list which have a lot of retweets and/or favorites:
+# - black-and-tan coonhound
+# - bouvier des flandres
+# 
+# its also interesting to see that the most of the top retweeted and faved breeds are not the same: the bedlington terrier is the most retweeted and the black-and-tan coonhound is the most faved breed.
+# It would be interesting to further investigate when the user retweeted a tweet and when they faved a tweet.
+# 
+# #### All in all, it seems like the black-and-tan coonhound is the most popular breed among the creators of WeRateDogs (#2 of 10) and among the users (#1 of 10 in faved tweets and #3 of 10 in retweets) 
+
+# #### Question 3:  I would like to know if the sucess of a tweet in terms of amount of retweets and favorites is related to the rating from WeRateDogs (have higher rated dogs more retweets & get more favorites)
+
+# I will fit two Linear Regression Model model with statsmodel libary to predict the retweet based based on the rating and to predict the favorite count based on the rating. We define our alpa with 0.05
+
+# In[570]:
+
+
+import statsmodels.api as sm
+
+
+# In[571]:
+
+
+# add an intercept
+tweet_archive['intercept'] = 1
+
+
+# In[572]:
+
+
+# model to predict the retweet based on the rating 
+lm = sm.OLS(tweet_archive['retweet_count'], tweet_archive[['intercept', 'rating_new']])
+results = lm.fit()
+results.summary()
+
+
+# In[573]:
+
+
+# modelto predict the favorite count based on the rating 
+lm = sm.OLS(tweet_archive['favorite_count'], tweet_archive[['intercept', 'rating_new']])
+results = lm.fit()
+results.summary()
+
+
+# In[574]:
+
+
+# plotting a scatterplot to visualize the relationship
+plt.scatter(tweet_archive['favorite_count'], tweet_archive['rating_new']);
+plt.xlabel('Count of faved Tweets');
+plt.ylabel('Rating');
+plt.title('Rating of Breed vs. Count of faved Tweets');
+
+
+# In[575]:
+
+
+# plotting a scatterplot to visualize the relationship
+plt.scatter(tweet_archive['retweet_count'], tweet_archive['rating_new']);
+plt.xlabel('Retweets');
+plt.ylabel('Rating');
+plt.title('Rating of Breed vs. Retweets');
+
+
+# You can say from the p-values (in both models its 0.000) that the rating from the creators of WeRateDogs have a on the number of retweets and favorites a tweet is statistically significant.
+# We can see from the coeffcients that the rating from the creators of WeRateDogs have a positive effect on the number of retweets and favorites:
+# For every unit in increase in the rating, the tweets gets 3135 more retweets and 1.12 more favorites.
+# These findings are supported by the scatterplots
+
+# Even though we have statistical significant results, the the R-squared value are really low which indicates that our models doesnt fit the data really well
+# (source:https://classroom.udacity.com/nanodegrees/nd002/parts/bb0cbeb6-d3f8-4bae-9dc3-4abba3823e54/modules/82c7c576-88f5-43b6-80fc-c53378527a2d/lessons/d780a3b0-a08e-4282-858e-6a28e8d524aa/concepts/f57165c9-d120-4277-b920-f427bbdb060b)
+
+# Please find a summary of the Investigation here
+# 
+# file:///Users/jamu/Downloads/act_report.html
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+
+
