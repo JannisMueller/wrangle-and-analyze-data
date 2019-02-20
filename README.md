@@ -4,6 +4,12 @@ In this project, I gathered, assessed, and cleaned data  and then acted on it th
 You can find the whole project in the Jupyter Notebook.
 I also added a html file of the project since it is difficult to see diffs on notebooks and do code reviews.
 
+Furthermore, I added a wrangle report and and an act report.
+
+*wrangle report*: documentation for data wrangling steps: gather, assess, and clean
+
+*act report*: documentation of analysis and insights into final data
+
 Since the notebook displays every line of ouput from the Twitter API query, there is some scrolling needed in the gather process.
 
 # Installation
